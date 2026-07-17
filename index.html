@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Splitter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --paper:#FBFAF6; --card:#FFFFFF; --ink:#22304A;
+    --ink-soft:#5A6478; --line:#E4E2D8;
+    --grid-green:#1E6E5C; --grid-green-soft:#E7F2EE;
+    --warn:#B7791F; --warn-soft:#FBF3E2;
+    --danger:#B3423A; --danger-soft:#F9ECEA;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    font-size:15px; line-height:1.6;
+    padding-bottom:80px;
+  }
+  header{
+    border-bottom:2px solid var(--ink);
+    background:var(--card);
+    padding:22px clamp(16px,4vw,48px) 18px;
+  }
+  h1{
+    font-family:"Nanum Myeongjo","Apple Myungjo",serif;
+    font-size:clamp(20px,3vw,26px); font-weight:800; letter-spacing:-.01em;
+  }
+  h1 .grid-mark{color:var(--grid-green);}
+  header p{color:var(--ink-soft); font-size:13.5px; margin-top:4px;}
+  header .privacy{
+    display:inline-block; margin-top:8px; font-size:12.5px;
+    background:var(--grid-green-soft); color:var(--grid-green);
+    border:1px solid var(--grid-green); border-radius:4px; padding:2px 10px;
+  }
+  main{max-width:1080px; margin:0 auto; padding:0 clamp(16px,4vw,48px);}
+
+  /* 단계 카드 */
+  .step{
+    background:var(--card); border:1px solid var(--line); border-radius:8px;
+    margin-top:22px; padding:20px 22px; position:relative;
+  }
+  .step[data-off="1"]{opacity:.45; pointer-events:none;}
+  .step-head{display:flex; align-items:baseline; gap:12px; margin-bottom:12px;}
+  .step-no{
+    font-family:"Nanum Myeongjo",serif; font-weight:800; font-size:15px;
+    color:var(--grid-green); border:1.5px solid var(--grid-green);
+    width:28px; height:28px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center; flex:none;
+    transform:translateY(4px);
+  }
+  .step-title{font-size:16.5px; font-weight:700;}
+  .step-sub{color:var(--ink-soft); font-size:13px;}
+
+  /* 입력 요소 */
+  label{font-size:13px; font-weight:600; color:var(--ink-soft); display:block; margin-bottom:4px;}
+  input[type="text"], input[type="number"], select, textarea{
+    font:inherit; color:var(--ink); background:var(--paper);
+    border:1px solid var(--line); border-radius:6px; padding:8px 10px; width:100%;
+  }
+  input:focus, select:focus, textarea:focus, button:focus-visible{
+    outline:2px solid var(--grid-green); outline-offset:1px;
+  }
+  textarea{min-height:120px; resize:vertical; font-size:14px; line-height:1.7;}
+  .row{display:flex; gap:14px; flex-wrap:wrap;}
+  .row > div{flex:1; min-width:140px;}
+
+  .filedrop{
+    border:2px dashed var(--line); border-radius:8px; background:var(--paper);
+    padding:26px; text-align:center; cursor:pointer; transition:border-color .15s;
+  }
+  .filedrop:hover, .filedrop.drag{border-color:var(--grid-green);}
+  .filedrop strong{color:var(--grid-green);}
+  .filedrop .fname{margin-top:6px; font-size:13px; color:var(--ink-soft);}
+
+  button{
+    font:inherit; font-weight:600; cursor:pointer;
+    border:1px solid var(--ink); background:var(--ink); color:#fff;
+    border-radius:6px; padding:9px 18px;
+  }
+  button.ghost{background:transparent; color:var(--ink); border-color:var(--line);}
+  button.ghost:hover{border-color:var(--ink);}
+  button.green{background:var(--grid-green); border-color:var(--grid-green);}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  .btnrow{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center;}
+
+  .notice{
+    border-radius:6px; padding:10px 14px; font-size:13.5px; margin-top:12px; display:none;
+  }
+  .notice.warn{display:block; background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn);}
+  .notice.ok{display:block; background:var(--grid-green-soft); color:var(--grid-green); border:1px solid var(--grid-green);}
+
+  /* 조각 카드 그리드 */
+  .chunks{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:14px;}
+  .chunk{
+    background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:10px; position:relative;
+    box-shadow:2px 2px 0 var(--line), 4px 4px 0 #EFEDE4; /* 서류 묶음 */
+  }
+  .chunk.excluded{opacity:.5;}
+  .chunk.excluded::after{
+    content:"제외됨"; position:absolute; inset:auto 8px 8px 8px;
+    background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger);
+    font-size:12px; font-weight:700; text-align:center; border-radius:4px; padding:2px;
+  }
+  .chunk-name{
+    font-weight:700; font-size:14px; display:flex; justify-content:space-between; gap:6px;
+    border-bottom:1.5px solid var(--grid-green); padding-bottom:5px; margin-bottom:8px;
+  }
+  .chunk-name .no{color:var(--grid-green); font-family:"Nanum Myeongjo",serif;}
+  .thumbwrap{
+    background:var(--paper); border:1px solid var(--line); border-radius:4px;
+    height:150px; display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .thumbwrap canvas{max-width:100%; max-height:100%;}
+  .thumbwrap .blank{color:var(--ink-soft); font-size:12.5px;}
+  .chunk-pages{font-size:12px; color:var(--ink-soft); margin-top:6px;}
+  .chunk-tools{display:flex; gap:4px; margin-top:8px; flex-wrap:wrap;}
+  .chunk-tools button{
+    flex:1; font-size:11.5px; padding:4px 2px; font-weight:600;
+    background:transparent; color:var(--ink-soft); border:1px solid var(--line); border-radius:4px;
+  }
+  .chunk-tools button:hover{color:var(--ink); border-color:var(--ink);}
+  .chunk-dl{width:100%; margin-top:6px; font-size:12.5px; padding:6px; background:var(--grid-green); border-color:var(--grid-green);}
+
+  .progress{font-size:13px; color:var(--ink-soft); margin-top:8px; display:none;}
+  code{font-family:ui-monospace,Menlo,monospace; font-size:.92em; background:var(--paper); border:1px solid var(--line); border-radius:3px; padding:1px 4px;}
+  footer{
+    max-width:1080px; margin:36px auto 0; padding:0 clamp(16px,4vw,48px);
+    font-size:12.5px; color:var(--ink-soft);
+  }
+  footer .sign{
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+    font-size:11.5px; opacity:.65; letter-spacing:.02em;
+  }
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="grid-mark">▦</span> PDF Splitter</h1>
+  <p>스캔한 PDF 한 파일을 개인별로 나눕니다. 미제출자 자리에는 빈 종이를 넣어 스캔하는 것을 권장합니다.</p>
+  <span class="privacy">모든 처리는 이 브라우저 안에서만 — 파일이 서버로 전송되지 않습니다</span>
+</header>
+
+<main>
+
+  <!-- 1단계: 파일 -->
+  <section class="step" id="step1">
+    <div class="step-head">
+      <span class="step-no">1</span>
+      <div><div class="step-title">PDF 파일과 분할 기준</div>
+      <div class="step-sub">여러 사람 분량이 이어 스캔된 PDF 하나를 올리세요.</div></div>
+    </div>
+    <div class="filedrop" id="drop" role="button" tabindex="0" aria-label="PDF 파일 선택">
+      <strong>PDF 선택</strong> 또는 여기로 끌어다 놓기
+      <div class="fname" id="fname">아직 선택된 파일 없음</div>
+    </div>
+    <input type="file" id="file" accept="application/pdf" hidden>
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label for="ppn">1인당 쪽수</label>
+        <select id="ppn">
+          <option value="1">1쪽</option>
+          <option value="2" selected>2쪽</option>
+          <option value="3">3쪽</option>
+          <option value="4">4쪽</option>
+        </select>
+      </div>
+      <div>
+        <label for="prefix">파일명 접두어 (선택)</label>
+        <input type="text" id="prefix" placeholder="예: 프로젝트명_학급_ (결과: 프로젝트명_학급_01_정화선.pdf)">
+      </div>
+    </div>
+  </section>
+
+  <!-- 2단계: 이름 목록 -->
+  <section class="step" id="step2" data-off="1">
+    <div class="step-head">
+      <span class="step-no">2</span>
+      <div><div class="step-title">이름 목록 붙여넣기 (선택)</div>
+      <div class="step-sub">한 줄에 한 명, 파일에 담긴 순서대로. 엑셀에서 번호·이름 열을 복사해 붙여도 됩니다. 비워두면 순번만 붙습니다.</div></div>
+    </div>
+    <textarea id="roster" placeholder="1	정화선&#10;2	조은영&#10;3	장인석&#10;… 또는 이름만 한 줄씩 (번호순)"></textarea>
+    <div class="btnrow">
+      <button class="green" id="split">분할하기</button>
+      <span class="progress" id="prog1"></span>
+    </div>
+    <div class="notice" id="note2"></div>
+  </section>
+
+  <!-- 3단계: 확인 -->
+  <section class="step" id="step3" data-off="1">
+    <div class="step-head">
+      <span class="step-no">3</span>
+      <div><div class="step-title">조각 확인</div>
+      <div class="step-sub">각 카드의 첫 쪽이 그 사람의 첫 장인지 확인하세요. 어긋난 곳부터 ‘빈 쪽 삽입(밀기)’ 또는 ‘첫 쪽 제거(당기기)’로 맞춥니다. 빈 종이 조각은 ‘제외’로 표시하세요.</div></div>
+    </div>
+    <div class="btnrow" style="margin-top:0; margin-bottom:4px">
+      <button class="ghost" id="rotall">전체 90° 회전 <span id="rotstate"></span></button>
+      <span class="step-sub">누를 때마다 90°씩 — 모든 조각에 적용되고, 카드의 ‘회전’은 그 위에 개별로 더해집니다.</span>
+    </div>
+    <div class="chunks" id="chunks"></div>
+    <div class="notice" id="note3"></div>
+  </section>
+
+  <!-- 4단계: 다운로드 -->
+  <section class="step" id="step4" data-off="1">
+    <div class="step-head">
+      <span class="step-no">4</span>
+      <div><div class="step-title">내려받기</div>
+      <div class="step-sub">카드마다 개별 저장하거나, 제외한 조각을 뺀 전체를 ZIP 하나로 받으세요.</div></div>
+    </div>
+    <div class="btnrow">
+      <button class="green" id="zipall">전체 ZIP으로 내려받기</button>
+      <span class="progress" id="prog2"></span>
+    </div>
+  </section>
+
+  <!-- 5단계: 프롬프트 -->
+  <section class="step" id="step5" data-off="1">
+    <div class="step-head">
+      <span class="step-no">5</span>
+      <div><div class="step-title">AI에 넘길 지시문 (선택)</div>
+      <div class="step-sub">나눈 PDF를 AI에 올릴 때 함께 붙여넣을 지시문입니다. 기본값은 손글씨 답안에서 핵심 문장을 뽑는 용도이며, 결과가 <code>### 이름</code> 형식으로 나오도록 되어 있습니다. 필요에 맞게 고쳐 쓰세요. 이 칸의 내용은 저장되지 않습니다.</div></div>
+    </div>
+    <textarea id="prompt" spellcheck="false"></textarea>
+    <div class="btnrow">
+      <button class="green" id="copyprompt">지시문 복사</button>
+      <button class="ghost" id="resetprompt">기본값으로 되돌리기</button>
+      <span class="progress" id="prog3"></span>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  분할 결과 파일명: 접두어 + 번호 + 이름 (예: 프로젝트명_학급_01_정화선.pdf) · 새로고침하면 모든 데이터가 사라집니다.
+  <div class="sign">© 2026 Hwasun Jung</div>
+</footer>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const S = {
+  bytes:null, pdfjs:null, numPages:0,
+  seq:[],           // [{kind:'real', page:1..N} | {kind:'blank'}]
+  roster:[],        // [{num, name}]
+  excluded:new Set(),
+  thumbCache:new Map(), // `${page}@${rot}` -> canvas
+  globalRot:0,          // 전체 회전 (0/90/180/270)
+  chunkRot:new Map(),   // 조각별 추가 회전
+};
+function rotOf(i){ return (S.globalRot + (S.chunkRot.get(i)||0)) % 360; }
+const $ = id => document.getElementById(id);
+/* 5단계(지시문)는 ?plus=1 이 붙은 주소에서만 나타난다.
+   가을 공개 시 PLUS 상수와 아래 두 곳의 조건만 지우면 모두에게 열린다. */
+const PLUS = new URLSearchParams(location.search).has("plus");
+const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
+if(!PLUS) $("step5").style.display = "none";
+
+/* ---------- 1단계: 파일 ---------- */
+function pickFile(){ $("file").click(); }
+on("drop","click",pickFile);
+on("drop","keydown",e=>{ if(e.key==="Enter"||e.key===" ") pickFile(); });
+on("drop","dragover",e=>{ e.preventDefault(); $("drop").classList.add("drag"); });
+on("drop","dragleave",()=> $("drop").classList.remove("drag"));
+on("drop","drop",e=>{
+  e.preventDefault(); $("drop").classList.remove("drag");
+  const f = e.dataTransfer.files[0];
+  if(f) loadFile(f);
+});
+on("file","change",e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+async function loadFile(f){
+  if(f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")){
+    alert("PDF 파일만 올릴 수 있습니다."); return;
+  }
+  $("fname").textContent = `${f.name} — 읽는 중…`;
+  try{
+    S.bytes = await f.arrayBuffer();
+    S.pdfjs = await pdfjsLib.getDocument({data:S.bytes.slice(0)}).promise;
+    S.numPages = S.pdfjs.numPages;
+    S.thumbCache.clear();
+    $("fname").textContent = `${f.name} · 전체 ${S.numPages}쪽`;
+    $("step2").removeAttribute("data-off");
+  }catch(err){
+    console.error(err);
+    $("fname").textContent = "파일을 읽지 못했습니다. 파일이 손상되지 않았는지 확인하세요.";
+  }
+}
+
+/* ---------- 이름 목록 파싱 ---------- */
+function parseRoster(text){
+  const out = [];
+  text.split(/\r?\n/).forEach(line=>{
+    const t = line.trim();
+    if(!t) return;
+    const m = t.match(/^(\d{1,3})[\s.)\t·-]+(.+)$/);
+    if(m) out.push({num:parseInt(m[1],10), name:m[2].trim()});
+    else out.push({num:out.length+1, name:t});
+  });
+  return out;
+}
+
+/* ---------- 2단계: 분할 ---------- */
+on("split","click",()=>{
+  const N = parseInt($("ppn").value,10);
+  S.seq = [];
+  for(let p=1; p<=S.numPages; p++) S.seq.push({kind:"real", page:p});
+  S.roster = parseRoster($("roster").value);
+  S.excluded.clear();
+
+  const chunkCount = Math.ceil(S.seq.length / N);
+  const n2 = $("note2");
+  if(S.numPages % N !== 0){
+    n2.className = "notice warn";
+    n2.textContent = `전체 ${S.numPages}쪽은 1인당 ${N}쪽으로 나누어떨어지지 않습니다 (${chunkCount}조각, 마지막 조각 ${S.numPages % N}쪽). 스캔 누락이나 여분 쪽이 있는지 3단계에서 확인하세요.`;
+  }else if(S.roster.length && S.roster.length !== chunkCount){
+    n2.className = "notice warn";
+    n2.textContent = `이름 목록 ${S.roster.length}명 ↔ 조각 ${chunkCount}개 — 수가 다릅니다. 미제출자 빈 종이 누락이 없는지 확인하세요.`;
+  }else{
+    n2.className = "notice ok";
+    n2.textContent = `${chunkCount}개 조각으로 나눴습니다. 아래에서 확인하세요.`;
+  }
+  $("step3").removeAttribute("data-off");
+  $("step4").removeAttribute("data-off");
+  if(PLUS) $("step5").removeAttribute("data-off");
+  renderChunks();
+});
+
+function chunksOf(){
+  const N = parseInt($("ppn").value,10);
+  const list = [];
+  for(let i=0; i<S.seq.length; i+=N) list.push(S.seq.slice(i,i+N));
+  return list;
+}
+function chunkLabel(i){
+  const r = S.roster[i];
+  return r ? {no:String(r.num).padStart(2,"0"), name:r.name}
+           : {no:String(i+1).padStart(2,"0"), name:"(이름 없음)"};
+}
+
+/* ---------- 3단계: 카드 렌더 ---------- */
+function renderChunks(){
+  const wrap = $("chunks");
+  wrap.innerHTML = "";
+  const chunks = chunksOf();
+  chunks.forEach((chunk,i)=>{
+    const lab = chunkLabel(i);
+    const card = document.createElement("div");
+    card.className = "chunk" + (S.excluded.has(i) ? " excluded" : "");
+    const pagesTxt = chunk.map(x=>x.kind==="real"?x.page:"빈쪽").join(", ");
+    const rot = rotOf(i);
+    card.innerHTML = `
+      <div class="chunk-name"><span>${lab.name}</span><span class="no">${lab.no}</span></div>
+      <div class="thumbwrap" id="th${i}"><span class="blank">불러오는 중…</span></div>
+      <div class="chunk-pages">원본 ${pagesTxt} 쪽${rot ? ` · ${rot}° 회전` : ""}</div>
+      <div class="chunk-tools">
+        <button data-act="rot" data-i="${i}" title="이 조각만 90°씩 더 돌립니다">회전</button>
+        <button data-act="blank" data-i="${i}" title="이 조각 앞에 빈 쪽을 넣어 이후 전체를 뒤로 밉니다">빈 쪽 삽입</button>
+        <button data-act="pull" data-i="${i}" title="이 조각의 첫 쪽을 빼서 이후 전체를 앞으로 당깁니다">첫 쪽 제거</button>
+        <button data-act="skip" data-i="${i}">${S.excluded.has(i)?"제외 해제":"제외"}</button>
+      </div>
+      <button class="chunk-dl" data-act="dl" data-i="${i}">이 PDF 저장</button>
+    `;
+    wrap.appendChild(card);
+    drawThumb(i, chunk);
+  });
+  const missing = chunks.length && S.roster.length && S.roster.length !== chunks.length;
+  const n3 = $("note3");
+  if(missing){
+    n3.className="notice warn";
+    n3.textContent=`이름 목록(${S.roster.length}명)과 조각(${chunks.length}개) 수가 달라 이름이 순서대로만 붙었습니다. 확인 후 목록을 고치고 다시 분할하세요.`;
+  } else { n3.className="notice"; n3.textContent=""; }
+}
+
+on("rotall","click",()=>{
+  S.globalRot = (S.globalRot + 90) % 360;
+  $("rotstate").textContent = S.globalRot ? `(현재 ${S.globalRot}°)` : "";
+  renderChunks();
+});
+
+wrapClick = $("chunks").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  const i = parseInt(b.dataset.i,10);
+  const N = parseInt($("ppn").value,10);
+  const act = b.dataset.act;
+  if(act==="rot"){
+    S.chunkRot.set(i, ((S.chunkRot.get(i)||0)+90)%360);
+    renderChunks();
+  }else if(act==="blank"){
+    S.seq.splice(i*N, 0, {kind:"blank"});
+    renderChunks();
+  }else if(act==="pull"){
+    const target = S.seq[i*N];
+    if(!target) return;
+    if(target.kind==="real" && !confirm(`원본 ${target.page}쪽을 분할 대상에서 제거합니다. 이후 조각이 모두 앞으로 당겨집니다. 계속할까요?`)) return;
+    S.seq.splice(i*N, 1);
+    renderChunks();
+  }else if(act==="skip"){
+    S.excluded.has(i) ? S.excluded.delete(i) : S.excluded.add(i);
+    renderChunks();
+  }else if(act==="dl"){
+    downloadChunk(i).catch(err=>{ console.error(err); alert("PDF 생성에 실패했습니다."); });
+  }
+});
+
+async function drawThumb(i, chunk){
+  const holder = $("th"+i);
+  const first = chunk.find(x=>x.kind==="real");
+  if(!first){ holder.innerHTML = '<span class="blank">빈 쪽 (제외 후보)</span>'; return; }
+  try{
+    const rot = rotOf(i);
+    const key = `${first.page}@${rot}`;
+    let canvas = S.thumbCache.get(key);
+    if(!canvas){
+      const page = await S.pdfjs.getPage(first.page);
+      const baseRot = (page.rotate + rot) % 360;
+      const vp0 = page.getViewport({scale:1, rotation:baseRot});
+      const scale = 260 / vp0.width;
+      const vp = page.getViewport({scale, rotation:baseRot});
+      canvas = document.createElement("canvas");
+      canvas.width = vp.width; canvas.height = vp.height;
+      await page.render({canvasContext:canvas.getContext("2d"), viewport:vp}).promise;
+      S.thumbCache.set(key, canvas);
+    }
+    holder.innerHTML = "";
+    holder.appendChild(canvas.cloneNode ? cloneCanvas(canvas) : canvas);
+  }catch(err){
+    console.error(err);
+    holder.innerHTML = '<span class="blank">미리보기 실패</span>';
+  }
+}
+function cloneCanvas(src){
+  const c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  c.getContext("2d").drawImage(src,0,0);
+  return c;
+}
+
+/* ---------- 4단계: 다운로드 ---------- */
+let libDocPromise = null;
+function getLibDoc(){
+  if(!libDocPromise) libDocPromise = PDFLib.PDFDocument.load(S.bytes);
+  return libDocPromise;
+}
+function chunkFilename(i){
+  const lab = chunkLabel(i);
+  const prefix = $("prefix").value.trim();
+  const safe = lab.name.replace(/[\\/:*?"<>|]/g,"").replace(/\s+/g,"");
+  return `${prefix}${lab.no}_${safe==="(이름없음)"?"미상":safe}.pdf`;
+}
+async function buildChunkPdf(i){
+  const chunks = chunksOf();
+  const pages = chunks[i].filter(x=>x.kind==="real").map(x=>x.page-1);
+  if(!pages.length) return null;
+  const rot = rotOf(i);
+  const src = await getLibDoc();
+  const out = await PDFLib.PDFDocument.create();
+  const copied = await out.copyPages(src, pages);
+  copied.forEach(p=>{
+    if(rot){
+      const cur = p.getRotation().angle || 0;
+      p.setRotation(PDFLib.degrees((cur + rot) % 360));
+    }
+    out.addPage(p);
+  });
+  return await out.save();
+}
+async function downloadChunk(i){
+  const bytes = await buildChunkPdf(i);
+  if(!bytes){ alert("이 조각에는 실제 쪽이 없습니다 (빈 쪽뿐)."); return; }
+  saveBlob(new Blob([bytes],{type:"application/pdf"}), chunkFilename(i));
+}
+on("zipall","click", async ()=>{
+  const chunks = chunksOf();
+  const prog = $("prog2");
+  prog.style.display="inline";
+  const zip = new JSZip();
+  let done = 0, total = 0;
+  try{
+    for(let i=0;i<chunks.length;i++){
+      if(S.excluded.has(i)) continue;
+      total++;
+    }
+    for(let i=0;i<chunks.length;i++){
+      if(S.excluded.has(i)) continue;
+      const bytes = await buildChunkPdf(i);
+      if(bytes) zip.file(chunkFilename(i), bytes);
+      done++;
+      prog.textContent = `PDF 생성 중 ${done}/${total}…`;
+    }
+    prog.textContent = "ZIP 압축 중…";
+    const blob = await zip.generateAsync({type:"blob"});
+    const prefix = $("prefix").value.trim();
+    saveBlob(blob, `${prefix||"PDF_분할_"}전체.zip`);
+    prog.textContent = `완료 — ${done}명 분량을 내려받았습니다.`;
+  }catch(err){
+    console.error(err);
+    prog.textContent = "ZIP 생성에 실패했습니다. 개별 저장을 사용해 보세요.";
+  }
+});
+/* ---------- 5단계: 지시문 ---------- */
+const DEFAULT_PROMPT = `첨부한 PDF는 학생이 손으로 쓴 답안을 스캔한 것이다. 파일명에 그 학생의 이름이 들어 있다.
+
+다음을 수행하라.
+1. 전체 내용을 판독하고, 글의 주제를 한 줄로 요약한다.
+2. 주제와 연관된 이 학생의 주장·핵심 문장을 2~3개 원문 그대로 추출하고, 각각 한글 해석을 붙인다.
+
+규칙
+- 판독이 불확실한 단어는 추측해서 채우지 말고 [판독불가]로 표시한다.
+- 확신이 서지 않는 부분이 있는 문장은 인용 후보에서 제외한다.
+- 원문의 철자·문법 오류를 고치지 말고 그대로 옮긴다. (교정은 이후 단계에서 한다)
+- 글에 없는 내용을 지어내지 않는다. 없으면 없다고 답한다.
+
+출력은 반드시 아래 형식을 그대로 따른다. ### 뒤에는 파일명에 적힌 이름만 쓴다.
+PDF를 여러 개 올린 경우 이 블록을 파일마다 반복한다. 다른 말은 덧붙이지 않는다.
+
+### 이름
+주제: (한 줄 요약)
+핵심 문장:
+1. (영어 원문) — (한글 해석)
+2. (영어 원문) — (한글 해석)`;
+
+$("prompt").value = DEFAULT_PROMPT;
+on("resetprompt","click",()=>{
+  $("prompt").value = DEFAULT_PROMPT;
+  const p = $("prog3");
+  p.style.display="inline"; p.textContent="기본값으로 되돌렸습니다.";
+  setTimeout(()=>{ p.style.display="none"; }, 2000);
+});
+on("copyprompt","click", async ()=>{
+  const p = $("prog3");
+  p.style.display="inline";
+  const text = $("prompt").value;
+  try{
+    await navigator.clipboard.writeText(text);
+    p.textContent = "복사했습니다. 나눈 PDF와 함께 AI에 붙여넣으세요.";
+  }catch(err){
+    // 클립보드 권한이 없는 환경 대비
+    $("prompt").select();
+    const ok = document.execCommand && document.execCommand("copy");
+    p.textContent = ok ? "복사했습니다. 나눈 PDF와 함께 AI에 붙여넣으세요."
+                       : "복사에 실패했습니다. 칸의 내용을 직접 선택해 복사하세요.";
+  }
+  setTimeout(()=>{ p.style.display="none"; }, 4000);
+});
+
+function saveBlob(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 3000);
+}
+</script>
+</body>
+</html>
