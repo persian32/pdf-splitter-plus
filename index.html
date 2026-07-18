@@ -210,7 +210,7 @@
     <div class="step-head">
       <span class="step-no">3</span>
       <div><div class="step-title">조각 확인</div>
-      <div class="step-sub">각 카드의 첫 쪽이 그 사람의 첫 장인지 확인하세요. 어긋났다면 그 지점에서 <strong>앞에 1명</strong>(미제출자 스캔 누락) 또는 <strong>앞에 1쪽</strong>(종이 한 장 누락)으로 맞춥니다. 빈 종이 조각은 <strong>제외</strong>로 표시하세요.</div></div>
+      <div class="step-sub">각 카드의 첫 쪽이 그 사람의 첫 장인지 확인하세요. 어긋났다면 이름 목록에서 결시자를 <code>결시</code>로 표기하고 다시 분할하세요. 빈 종이 조각은 <strong>제외</strong>로 표시합니다.</div></div>
     </div>
     <div class="btnrow" style="margin-top:0; margin-bottom:4px">
       <button class="ghost" id="rotall">전체 90° 회전 <span id="rotstate"></span></button>
@@ -402,11 +402,6 @@ function renderChunks(){
         <button data-act="rot" data-i="${i}" title="이 조각만 90°씩 더 돌립니다">회전</button>
         <button data-act="skip" data-i="${i}">${S.excluded.has(i)?"제외 해제":"제외"}</button>
       </div>
-      <div class="chunk-tools">
-        <button data-act="person" data-i="${i}" title="스캔에서 빠진 미제출자 자리를 이 앞에 넣습니다 (1인당 쪽수만큼)">앞에 1명</button>
-        <button data-act="blank" data-i="${i}" title="스캔에서 빠진 종이 한 장을 이 앞에 넣습니다">앞에 1쪽</button>
-        <button data-act="pull" data-i="${i}" title="여분으로 들어간 종이 한 장을 뺍니다">1쪽 빼기</button>
-      </div>
       <button class="chunk-dl" data-act="dl" data-i="${i}">이 조각 저장</button>
     `;
     wrap.appendChild(card);
@@ -433,18 +428,6 @@ wrapClick = $("chunks").addEventListener("click", e=>{
   const act = b.dataset.act;
   if(act==="rot"){
     S.chunkRot.set(i, ((S.chunkRot.get(i)||0)+90)%360);
-    renderChunks();
-  }else if(act==="person"){
-    for(let k=0;k<N;k++) S.seq.splice(i*N, 0, {kind:"blank"});
-    renderChunks();
-  }else if(act==="blank"){
-    S.seq.splice(i*N, 0, {kind:"blank"});
-    renderChunks();
-  }else if(act==="pull"){
-    const target = S.seq[i*N];
-    if(!target) return;
-    if(target.kind==="real" && !confirm(`원본 ${target.page}쪽을 분할 대상에서 제거합니다. 이후 조각이 모두 앞으로 당겨집니다. 계속할까요?`)) return;
-    S.seq.splice(i*N, 1);
     renderChunks();
   }else if(act==="skip"){
     S.excluded.has(i) ? S.excluded.delete(i) : S.excluded.add(i);
